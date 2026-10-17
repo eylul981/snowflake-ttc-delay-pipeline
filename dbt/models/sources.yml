@@ -1,0 +1,14 @@
+version: 2
+
+sources:
+  - name: staging
+    database: TTC_DELAYS
+    schema: STAGING
+    tables:
+      - name: delays
+
+  - name: raw
+    database: TTC_DELAYS
+    schema: RAW
+    tables:
+      - name: delay_codes
