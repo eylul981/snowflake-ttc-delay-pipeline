@@ -1,0 +1,10 @@
+ttc_delays_dbt:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+      role: SYSADMIN
+      warehouse: TTC_WH
+      database: TTC_DELAYS
+      schema: MARTS
+      threads: 8
