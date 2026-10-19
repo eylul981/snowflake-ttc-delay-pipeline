@@ -109,11 +109,39 @@ The single warning is intentional: undocumented delay codes are a real property 
 ![Monthly trend](docs/images/Analysis3.png)
 
 ---
+## Orchestration with Airflow
 
+The pipeline is orchestrated by an **Apache Airflow 3** DAG (`airflow/dags/ttc_delays_pipeline.py`) that runs daily:
+
+`load_raw → run_merge → wait_for_merge → dbt_build → quality_check`
+
+| Task | What it does |
+|---|---|
+| `load_raw` | `COPY INTO` RAW from the stage. Snowflake tracks loaded files, so re-runs skip them. |
+| `run_merge` | Triggers the Snowflake Task that MERGEs new rows into STAGING. |
+| `wait_for_merge` | Sensor that waits until the stream is empty (the MERGE is asynchronous). |
+| `dbt_build` | Runs `EXECUTE DBT PROJECT ... ARGS = 'build'`: all models and tests inside Snowflake. |
+| `quality_check` | Fails the run if the fact table is empty, has duplicate keys or missing dates. |
+
+- Airflow connects as a dedicated **service user** (`TYPE = SERVICE`) with **key-pair authentication**, so no passwords are stored.
+- Tasks retry once on failure. A failed run can be resumed from the failed task without re-running earlier steps.
+- Debugged during setup: the dbt step failed with *"not authorized"* because the deployed dbt project was owned by `ACCOUNTADMIN` while the service user only had `SYSADMIN`. Fixed by transferring ownership to `SYSADMIN`.
+
+![Airflow DAG](docs/images/airflow_dag.png)
+
+---
 ## How to run
 
 1. Create a Snowflake account and run `snowflake/01_setup_and_load.sql` up to the stage creation.
 2. Download *TTC Subway Delay Data* and *Code Descriptions* from the [City of Toronto Open Data portal](https://open.toronto.ca/dataset/ttc-subway-delay-data/) and upload them to `@TTC_DELAYS.RAW.TTC_STAGE/Subway/` (Snowsight → Ingestion → Add Data).
 3. Run the rest of `01_setup_and_load.sql`, then `02_stream_task.sql`.
 4. Create a dbt project in Snowsight Workspaces with the files in `dbt/` and run **Build**.
-5. Create a Streamlit app in Snowsight and
+5. Create a Streamlit app in Snowsight and paste `streamlit/streamlit_app.py`.
+6. Optionally, run `airflow/dags/ttc_delays_pipeline.py` in Airflow with a `snowflake_default` connection (key-pair auth).
+
+## Next steps
+
+- Add bus and streetcar delay data (`mode` column is already in place)
+- Automate ingestion with **Snowpipe** from an S3 bucket
+- Load the 2014–2024 historical archive and convert the fact table to an **incremental** dbt model
+- Run Airflow in production (e.g. MWAA or Astronomer) instead of a dev environment
